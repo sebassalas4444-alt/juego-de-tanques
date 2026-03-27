@@ -1,0 +1,302 @@
+ <!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Battle: Vertical Canyon Duel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: white;
+        }
+        canvas {
+            border: 4px solid #5d4037;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            background-color: #3e2723;
+            max-width: 95vw;
+            max-height: 75vh;
+        }
+        .health-container {
+            width: 150px;
+            height: 14px;
+            background: #2d3748;
+            border-radius: 7px;
+            overflow: hidden;
+            border: 2px solid #1a202c;
+        }
+        .health-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        /* Ocultar las imágenes fuente para que solo se vean en el canvas */
+        .source-images {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Imágenes fuente (puedes editar sus src manualmente) -->
+    <div class="source-images">
+        <img id="fondo" src="https://artifacts.dev/api/v1/artifacts/default-app-id/public/data/imagen.jpg?id=81b60252-4df4-45fd-b9c3-72ed7722a596" alt="fondo">
+        <img id="tanqueAzul" src="https://artifacts.dev/api/v1/artifacts/default-app-id/public/data/imagen.jpg?id=9804aa66-3f19-4b82-8881-fe5f245133da" alt="jugador">
+        <img id="tanqueRojo" src="https://artifacts.dev/api/v1/artifacts/default-app-id/public/data/imagen.jpg?id=0f7f1b6d-5627-47c2-9949-2f3b2a021b97" alt="enemigo">
+    </div>
+
+    <div class="mb-4 w-full max-w-4xl px-4 flex justify-between items-center">
+        <div class="flex flex-col items-start">
+            <h2 class="text-blue-400 font-black uppercase text-xl">Jugador Azul</h2>
+            <div class="health-container">
+                <div id="p1-bar" class="health-fill bg-blue-500"></div>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <div id="score-val" class="text-5xl font-mono font-bold text-yellow-400">0</div>
+            <div class="text-xs text-gray-400 uppercase tracking-widest">Puntos</div>
+        </div>
+
+        <div class="flex flex-col items-end">
+            <h2 class="text-red-400 font-black uppercase text-xl">Enemigo Rojo</h2>
+            <div class="health-container">
+                <div id="cpu-bar" class="health-fill bg-red-500"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="relative">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui-overlay">
+            <h2 id="result-text" class="text-6xl font-black mb-4"></h2>
+            <p id="final-score" class="text-2xl text-yellow-400 mb-8"></p>
+            <button onclick="resetGame()" class="px-10 py-4 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg font-bold shadow-lg transition-transform hover:scale-105">
+                REINTENTAR DUELO
+            </button>
+        </div>
+    </div>
+
+    <div class="mt-4 text-center text-gray-400 text-xs">
+        Moverse: <span class="text-white font-bold">↑ ↓</span> | Disparar: <span class="text-white font-bold">ESPACIO</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-val');
+        
+        canvas.width = 1000;
+        canvas.height = 500;
+
+        // Referencias a los elementos que tú controlarás
+        const imgBg = document.getElementById('fondo');
+        const imgPlayer = document.getElementById('tanqueAzul');
+        const imgEnemy = document.getElementById('tanqueRojo');
+
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        class Bullet {
+            constructor(x, y, dx, color) {
+                this.x = x;
+                this.y = y;
+                this.dx = dx;
+                this.color = color;
+                this.size = 6;
+            }
+            update() { this.x += this.dx; }
+            draw() {
+                ctx.save();
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Tank {
+            constructor(x, y, imgElement, isPlayer) {
+                this.x = x;
+                this.y = y;
+                this.img = imgElement;
+                this.isPlayer = isPlayer;
+                this.width = 90;
+                this.height = 70;
+                this.speed = 5;
+                this.health = 100;
+                this.bullets = [];
+                this.cooldown = 0;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Si es jugador (lado izquierdo), mira a la derecha. 
+                // Si es IA (lado derecho), se invierte horizontalmente.
+                if (!this.isPlayer) ctx.scale(-1, 1);
+
+                if (this.img && this.img.complete && this.img.naturalWidth > 0) {
+                    ctx.drawImage(this.img, -this.width/2, -this.height/2, this.width, this.height);
+                } else {
+                    // Fallback visual si la imagen no carga
+                    ctx.fillStyle = this.isPlayer ? "#3b82f6" : "#ef4444";
+                    ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                    ctx.fillStyle = "white";
+                    ctx.fillText(this.isPlayer ? "AZUL" : "ROJO", -15, 5);
+                }
+                ctx.restore();
+            }
+
+            move(dy) {
+                this.y += dy * this.speed;
+                if (this.y < 60) this.y = 60;
+                if (this.y > canvas.height - 60) this.y = canvas.height - 60;
+            }
+
+            shoot() {
+                if (this.cooldown <= 0) {
+                    const dx = this.isPlayer ? 12 : -12;
+                    const color = this.isPlayer ? "#3b82f6" : "#ef4444";
+                    const startX = this.isPlayer ? this.x + 45 : this.x - 45;
+                    this.bullets.push(new Bullet(startX, this.y, dx, color));
+                    this.cooldown = 25;
+                }
+            }
+
+            updateBullets(target) {
+                if (this.cooldown > 0) this.cooldown--;
+                for (let i = this.bullets.length - 1; i >= 0; i--) {
+                    const b = this.bullets[i];
+                    b.update();
+                    b.draw();
+
+                    const dist = Math.hypot(b.x - target.x, b.y - target.y);
+                    if (dist < 40) {
+                        target.health -= 10;
+                        if (this.isPlayer) score += 100;
+                        this.bullets.splice(i, 1);
+                        updateUI();
+                        continue;
+                    }
+                    if (b.x < -50 || b.x > canvas.width + 50) this.bullets.splice(i, 1);
+                }
+            }
+        }
+
+        let player, cpu, score, gameOver;
+
+        function init() {
+            player = new Tank(100, canvas.height / 2, imgPlayer, true);
+            cpu = new Tank(canvas.width - 100, canvas.height / 2, imgEnemy, false);
+            score = 0;
+            gameOver = false;
+            document.getElementById('ui-overlay').style.display = 'none';
+            updateUI();
+        }
+
+        function updateUI() {
+            scoreDisplay.innerText = score;
+            document.getElementById('p1-bar').style.width = player.health + "%";
+            document.getElementById('cpu-bar').style.width = cpu.health + "%";
+            if (player.health <= 0 || cpu.health <= 0) endGame();
+        }
+
+        function endGame() {
+            gameOver = true;
+            const overlay = document.getElementById('ui-overlay');
+            const resText = document.getElementById('result-text');
+            overlay.style.display = 'flex';
+            document.getElementById('final-score').innerText = `Puntos Finales: ${score}`;
+            
+            if (player.health <= 0) {
+                resText.innerText = "¡DERROTA!";
+                resText.style.color = "#ef4444";
+            } else {
+                resText.innerText = "¡VICTORIA!";
+                resText.style.color = "#4ade80";
+            }
+        }
+
+        function resetGame() { init(); }
+
+        function updateAI() {
+            // Seguir al jugador verticalmente
+            const diff = player.y - cpu.y;
+            if (Math.abs(diff) > 15) {
+                cpu.move(diff > 0 ? 0.75 : -0.75);
+            }
+
+            // Esquivar ráfagas
+            player.bullets.forEach(b => {
+                if (b.x > cpu.x - 250 && Math.abs(b.y - cpu.y) < 60) {
+                    cpu.move(b.y < cpu.y ? 1.6 : -1.6);
+                }
+            });
+
+            // Disparar
+            if (Math.abs(diff) < 40 && Math.random() < 0.04) {
+                cpu.shoot();
+            }
+        }
+
+        function gameLoop() {
+            if (!gameOver) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Dibujar fondo
+                if (imgBg && imgBg.complete && imgBg.naturalWidth > 0) {
+                    ctx.drawImage(imgBg, 0, 0, canvas.width, canvas.height);
+                } else {
+                    ctx.fillStyle = "#3e2723";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+                // Controles (Arriba/Abajo)
+                if (keys['ArrowUp']) player.move(-1);
+                if (keys['ArrowDown']) player.move(1);
+                if (keys['Space']) player.shoot();
+
+                updateAI();
+                player.updateBullets(cpu);
+                cpu.updateBullets(player);
+                player.draw();
+                cpu.draw();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Iniciar el juego
+        init();
+        gameLoop();
+    </script>
+</body>
+</html>
