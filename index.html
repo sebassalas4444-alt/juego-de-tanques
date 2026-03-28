@@ -60,9 +60,10 @@
 <body>
 
     <div class="source-images">
+        <!-- Corregido: IDs y archivos alineados correctamente -->
         <img id="fondo" src="fondo.jpeg" alt="fondo">
-        <img id="tanqueAzul" src="tanquerojo.png" alt="jugador">
-        <img id="tanqueRojo" src="tanqueazul.png" alt="enemigo">
+        <img id="imgAzul" src="tanqueazul.png" alt="jugador">
+        <img id="imgRojo" src="tanquerojo.png" alt="enemigo">
     </div>
 
     <div class="mb-4 w-full max-w-4xl px-4 flex justify-between items-center">
@@ -111,8 +112,8 @@
         canvas.height = 500;
 
         const imgBg = document.getElementById('fondo');
-        const imgPlayer = document.getElementById('tanqueAzul');
-        const imgEnemy = document.getElementById('tanqueRojo');
+        const imgPlayer = document.getElementById('imgAzul');
+        const imgEnemy = document.getElementById('imgRojo');
 
         const keys = {};
         window.addEventListener('keydown', e => keys[e.code] = true);
@@ -156,9 +157,14 @@
             draw() {
                 ctx.save();
                 ctx.translate(this.x, this.y);
-                if (!this.isPlayer) ctx.scale(-1, 1);
+                
+                // Si es el enemigo (lado derecho), lo volteamos para que mire a la izquierda
+                if (!this.isPlayer) {
+                    ctx.scale(-1, 1);
+                }
 
                 if (this.img && this.img.complete && this.img.naturalWidth > 0) {
+                    // Dibujamos centrado
                     ctx.drawImage(this.img, -this.width/2, -this.height/2, this.width, this.height);
                 } else {
                     ctx.fillStyle = this.isPlayer ? "#3b82f6" : "#ef4444";
@@ -179,9 +185,11 @@
 
             shoot() {
                 if (this.cooldown <= 0) {
+                    // Dirección: jugador (derecha +), enemigo (izquierda -)
                     const dx = this.isPlayer ? 12 : -12;
                     const color = this.isPlayer ? "#3b82f6" : "#ef4444";
-                    const startX = this.isPlayer ? this.x + 45 : this.x - 45;
+                    // Punto de salida de la bala (punta del cañón)
+                    const startX = this.isPlayer ? this.x + 40 : this.x - 40;
                     this.bullets.push(new Bullet(startX, this.y, dx, color));
                     this.cooldown = 25;
                 }
@@ -194,6 +202,7 @@
                     b.update();
                     b.draw();
 
+                    // Colisión
                     const dist = Math.hypot(b.x - target.x, b.y - target.y);
                     if (dist < 40) {
                         target.health -= 10;
@@ -210,8 +219,9 @@
         let player, cpu, score, gameOver;
 
         function init() {
-            player = new Tank(100, canvas.height / 2, imgPlayer, true);
-            cpu = new Tank(canvas.width - 100, canvas.height / 2, imgEnemy, false);
+            // Jugador Azul a la izquierda, Enemigo Rojo a la derecha
+            player = new Tank(120, canvas.height / 2, imgPlayer, true);
+            cpu = new Tank(canvas.width - 120, canvas.height / 2, imgEnemy, false);
             score = 0;
             gameOver = false;
             document.getElementById('ui-overlay').style.display = 'none';
@@ -220,12 +230,13 @@
 
         function updateUI() {
             scoreDisplay.innerText = score;
-            document.getElementById('p1-bar').style.width = player.health + "%";
-            document.getElementById('cpu-bar').style.width = cpu.health + "%";
+            document.getElementById('p1-bar').style.width = Math.max(0, player.health) + "%";
+            document.getElementById('cpu-bar').style.width = Math.max(0, cpu.health) + "%";
             if (player.health <= 0 || cpu.health <= 0) endGame();
         }
 
         function endGame() {
+            if (gameOver) return;
             gameOver = true;
             const overlay = document.getElementById('ui-overlay');
             const resText = document.getElementById('result-text');
@@ -244,51 +255,40 @@
         function resetGame() { init(); }
 
         function updateAI() {
-            // LÓGICA DE DIFICULTAD DINÁMICA AJUSTADA:
-            // intensifier va de 0.0 (100% vida) a 1.0 (0% vida)
             const intensifier = (100 - cpu.health) / 100;
-            
-            // Velocidad base de seguimiento (Muy lenta al principio para facilitar el juego)
-            // Antes: 0.5 a 1.2 | Ahora: 0.3 a 1.3
             const followSpeed = 0.3 + (intensifier * 1.0);
-            
-            // Velocidad de esquive (Mucho más torpe al principio)
-            // Antes: 1.0 a 2.5 | Ahora: 0.6 a 2.8
             const dodgeSpeed = 0.6 + (intensifier * 2.2);
 
-            // Seguir al jugador verticalmente
             const diff = player.y - cpu.y;
             if (Math.abs(diff) > 15) {
                 cpu.move(diff > 0 ? followSpeed : -followSpeed);
             }
 
-            // Esquivar ráfagas
             player.bullets.forEach(b => {
-                // Rango de detección reducido al inicio (200) y normalizado al final (350)
-                const detectionRange = 200 + (intensifier * 150);
-                if (b.x > cpu.x - detectionRange && Math.abs(b.y - cpu.y) < 65) {
+                const detectionRange = 250 + (intensifier * 150);
+                if (b.x > cpu.x - detectionRange && Math.abs(b.y - cpu.y) < 70) {
                     cpu.move(b.y < cpu.y ? dodgeSpeed : -dodgeSpeed);
                 }
             });
 
-            // Disparar: Probabilidad más baja al inicio para no abrumar al jugador
-            const shootChance = 0.02 + (intensifier * 0.05);
-            if (Math.abs(diff) < 50 && Math.random() < shootChance) {
+            const shootChance = 0.02 + (intensifier * 0.04);
+            if (Math.abs(diff) < 60 && Math.random() < shootChance) {
                 cpu.shoot();
             }
         }
 
         function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar fondo
+            if (imgBg && imgBg.complete && imgBg.naturalWidth > 0) {
+                ctx.drawImage(imgBg, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = "#3e2723";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
             if (!gameOver) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                if (imgBg && imgBg.complete && imgBg.naturalWidth > 0) {
-                    ctx.drawImage(imgBg, 0, 0, canvas.width, canvas.height);
-                } else {
-                    ctx.fillStyle = "#3e2723";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
-
                 if (keys['ArrowUp']) player.move(-1);
                 if (keys['ArrowDown']) player.move(1);
                 if (keys['Space']) player.shoot();
@@ -298,12 +298,21 @@
                 cpu.updateBullets(player);
                 player.draw();
                 cpu.draw();
+            } else {
+                // Dibujar tanques estáticos al final
+                player.draw();
+                cpu.draw();
             }
             requestAnimationFrame(gameLoop);
         }
 
-        init();
-        gameLoop();
+        // Asegurar que el juego inicie cuando las imágenes carguen o inmediatamente
+        window.onload = () => {
+            init();
+            gameLoop();
+        };
+        // Por si acaso el onload ya pasó
+        if (imgBg.complete) { init(); gameLoop(); }
     </script>
 </body>
 </html>
